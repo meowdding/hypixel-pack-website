@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Meowdding Resourcepack Research Page</title>
+<link rel="icon" type="image/x-icon" href="./assets/pack.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-title">
+    <h1>Meowdding Resourcepack Research Page</h1>
+  </div>
+  <div class="topbar-tools">
+    <input id="search" type="text" placeholder="Search files..." autocomplete="off" spellcheck="false">
+    <div id="filter-bar" class="filter-bar" role="group" aria-label="Filter by file type">
+      <button type="button" class="filter-btn active" data-filter="">All</button>
+      <button type="button" class="filter-btn" data-filter="image">Images</button>
+      <button type="button" class="filter-btn" data-filter="json">JSON</button>
+    </div>
+    <span id="status" class="status">Loading...</span>
+    <span id="last-updated" class="status"></span>
+  </div>
+</header>
+
+<nav id="breadcrumb" class="breadcrumb" aria-label="Path"></nav>
+
+<div class="layout">
+  <aside id="sidebar" class="sidebar" aria-label="Folders"></aside>
+  <main id="grid" class="grid" aria-label="Files"></main>
+</div>
+
+<div id="modal" class="modal" aria-hidden="true">
+  <div class="modal-panel">
+    <button class="modal-close" aria-label="Close">X</button>
+    <div id="modal-body"></div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
