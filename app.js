@@ -4,7 +4,7 @@ const REPO_CONFIG = {
   branchFilter: null,
 };
 
-const API_BASE = "https://api.github.com";
+const API_BASE = "https://mrrp-proxy.retreat743.workers.dev/api/gh";
 const RAW_BASE = "https://raw.githubusercontent.com";
 
 let branches = [];
