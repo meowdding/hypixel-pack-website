@@ -17,6 +17,8 @@ let activeCategoryFilter = null;
 let viewingGroup = null;
 let currentOpenFile = null;
 
+let diffNav = { branch: null, stack: [], index: -1, loading: false };
+
 function matchesCategoryFilter(item) {
   if (!activeCategoryFilter) return true;
   return categoryFor(item.name) === activeCategoryFilter;
@@ -887,6 +889,8 @@ async function openDiffModal(branch, explicitBase = null, explicitHead = null) {
   els.modal.classList.add("open");
   els.modal.setAttribute("aria-hidden", "false");
 
+  diffNav = { branch, stack: [], index: -1, loading: false };
+
   const currentSha = explicitHead || data.sha;
   let parentSha = explicitBase;
   let headDate = null;
@@ -916,10 +920,169 @@ async function openDiffModal(branch, explicitBase = null, explicitHead = null) {
       throw new Error(`GitHub API error ${res.status} comparing versions`);
     }
     const cmp = await res.json();
+    const targetEntry = { base: parentSha, head: currentSha, headDate, cmp, noOlder: undefined };
+    diffNav.stack = [targetEntry];
+    diffNav.index = 0;
+
+    if (currentSha !== data.sha) {
+      try {
+        const aheadRes = await fetch(`${API_BASE}/repos/${REPO_CONFIG.owner}/${REPO_CONFIG.repo}/compare/${currentSha}...${data.sha}`);
+        if (aheadRes.ok) {
+          const ahead = await aheadRes.json();
+          const commits = ahead.commits || [];
+          const newerEntries = [];
+          let prevSha = currentSha;
+          for (const c of commits) {
+            newerEntries.push({
+              base: prevSha,
+              head: c.sha,
+              headDate: (c.commit && (c.commit.committer?.date || c.commit.author?.date)) || null,
+              cmp: null,
+              noOlder: undefined,
+            });
+            prevSha = c.sha;
+          }
+          newerEntries.reverse();
+          diffNav.stack = [...newerEntries, targetEntry];
+          diffNav.index = newerEntries.length;
+        }
+      } catch (e) {
+        console.warn("Couldn't reconstruct newer commits for this diff link.", e);
+      }
+    }
+
     renderDiff(branch, cmp, parentSha, currentSha, headDate);
   } catch (e) {
     console.error(e);
     els.modalBody.innerHTML = `<div class="modal-error">${escapeHtml(e.message || "Couldn't load the diff.")}</div>`;
+  }
+}
+
+async function goOlderDiff() {
+  const nav = diffNav;
+  if (nav.loading || nav.index === -1) return;
+  const current = nav.stack[nav.index];
+  if (current.noOlder) return;
+  const branch = nav.branch;
+
+  const nextIndex = nav.index + 1;
+  if (nav.stack[nextIndex]) {
+    nav.index = nextIndex;
+    const entry = nav.stack[nextIndex];
+    renderDiff(branch, entry.cmp, entry.base, entry.head, entry.headDate);
+    return;
+  }
+
+  nav.loading = true;
+  updateDiffNavButtons();
+
+  try {
+    const commitRes = await fetch(`${API_BASE}/repos/${REPO_CONFIG.owner}/${REPO_CONFIG.repo}/commits/${current.base}`);
+    if (!commitRes.ok) {
+      if (commitRes.status === 403) throw new Error("GitHub API rate limit hit - try again shortly.");
+      throw new Error(`GitHub API error ${commitRes.status} resolving commit history`);
+    }
+    const commit = await commitRes.json();
+    const newHeadDate = (commit.commit && (commit.commit.committer?.date || commit.commit.author?.date)) || null;
+    const newBase = commit.parents && commit.parents[0] && commit.parents[0].sha;
+
+    if (!newBase) {
+      current.noOlder = true;
+      nav.loading = false;
+      updateDiffNavButtons();
+      return;
+    }
+
+    const res = await fetch(`${API_BASE}/repos/${REPO_CONFIG.owner}/${REPO_CONFIG.repo}/compare/${newBase}...${current.base}`);
+    if (!res.ok) {
+      if (res.status === 403) throw new Error("GitHub API rate limit hit - try again shortly.");
+      throw new Error(`GitHub API error ${res.status} comparing versions`);
+    }
+    const cmp = await res.json();
+
+    if (diffNav.branch !== branch) return;
+
+    nav.stack.push({ base: newBase, head: current.base, headDate: newHeadDate, cmp, noOlder: undefined });
+    nav.index = nextIndex;
+    nav.loading = false;
+    renderDiff(branch, cmp, newBase, current.base, newHeadDate);
+  } catch (e) {
+    console.error(e);
+    nav.loading = false;
+    updateDiffNavButtons();
+    els.modalBody.insertAdjacentHTML("beforeend",
+      `<div class="modal-error">${escapeHtml(e.message || "Couldn't load the previous commit.")}</div>`);
+  }
+}
+
+async function goNewerDiff() {
+  const nav = diffNav;
+  if (nav.loading || nav.index <= 0) return;
+  const branch = nav.branch;
+  const targetIndex = nav.index - 1;
+  const entry = nav.stack[targetIndex];
+
+  if (entry.cmp) {
+    nav.index = targetIndex;
+    renderDiff(branch, entry.cmp, entry.base, entry.head, entry.headDate);
+    return;
+  }
+
+  nav.loading = true;
+  updateDiffNavButtons();
+
+  try {
+    const res = await fetch(`${API_BASE}/repos/${REPO_CONFIG.owner}/${REPO_CONFIG.repo}/compare/${entry.base}...${entry.head}`);
+    if (!res.ok) {
+      if (res.status === 403) throw new Error("GitHub API rate limit hit - try again shortly.");
+      throw new Error(`GitHub API error ${res.status} comparing versions`);
+    }
+    const cmp = await res.json();
+
+    if (diffNav.branch !== branch) return;
+
+    entry.cmp = cmp;
+    nav.index = targetIndex;
+    nav.loading = false;
+    renderDiff(branch, cmp, entry.base, entry.head, entry.headDate);
+  } catch (e) {
+    console.error(e);
+    nav.loading = false;
+    updateDiffNavButtons();
+    els.modalBody.insertAdjacentHTML("beforeend",
+      `<div class="modal-error">${escapeHtml(e.message || "Couldn't load the next commit.")}</div>`);
+  }
+}
+
+function updateDiffNavButtons() {
+  const olderBtn = els.modalBody.querySelector(".diff-nav-older");
+  const newerBtn = els.modalBody.querySelector(".diff-nav-newer");
+  const current = diffNav.stack[diffNav.index];
+  if (olderBtn) {
+    olderBtn.disabled = diffNav.loading || !current || current.noOlder === true;
+    olderBtn.textContent = diffNav.loading ? "Loading..." : "‹ Older";
+  }
+  if (newerBtn) {
+    newerBtn.disabled = diffNav.loading || diffNav.index <= 0;
+  }
+}
+
+async function checkOlderAvailability(entry, branch) {
+  if (!entry || entry.noOlder !== undefined || entry.checkingOlder) return;
+  entry.checkingOlder = true;
+  try {
+    const commitRes = await fetch(`${API_BASE}/repos/${REPO_CONFIG.owner}/${REPO_CONFIG.repo}/commits/${entry.base}`);
+    if (!commitRes.ok) return; 
+    const commit = await commitRes.json();
+    const hasParent = !!(commit.parents && commit.parents[0] && commit.parents[0].sha);
+    entry.noOlder = !hasParent;
+  } catch (e) {
+
+  } finally {
+    entry.checkingOlder = false;
+    if (diffNav.branch === branch && diffNav.stack[diffNav.index] === entry) {
+      updateDiffNavButtons();
+    }
   }
 }
 
@@ -938,12 +1101,23 @@ function renderDiff(branch, cmp, parentSha, currentSha, headDate) {
     <div class="diff-toolbar">
       <div class="diff-summary">${files.length} file${files.length === 1 ? "" : "s"} changed</div>
       <div class="diff-toolbar-actions">
+        <button type="button" class="diff-nav-older" title="See the previous commit's diff">‹ Older</button>
+        <button type="button" class="diff-nav-newer" title="Back to the more recent diff">Newer ›</button>
         <button type="button" class="diff-toggle-all" data-action="expand">Expand all</button>
         <button type="button" class="diff-toggle-all" data-action="collapse">Collapse all</button>
         <button type="button" class="diff-copy-link">Copy link</button>
       </div>
     </div>
   `;
+
+  els.modalBody.querySelector(".diff-nav-older").onclick = goOlderDiff;
+  els.modalBody.querySelector(".diff-nav-newer").onclick = goNewerDiff;
+  updateDiffNavButtons();
+
+  const activeEntry = diffNav.stack[diffNav.index];
+  if (activeEntry && activeEntry.base === parentSha && activeEntry.head === currentSha) {
+    checkOlderAvailability(activeEntry, branch);
+  }
 
   const copyLinkBtn = els.modalBody.querySelector(".diff-copy-link");
   if (copyLinkBtn) {

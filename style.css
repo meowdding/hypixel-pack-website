@@ -424,7 +424,7 @@ a:hover { color: var(--text); }
   gap: 6px;
 }
 
-.diff-toggle-all, .diff-copy-link {
+.diff-toggle-all, .diff-copy-link, .diff-nav-older, .diff-nav-newer {
   background: var(--primary);
   border: none;
   color: var(--text);
@@ -435,7 +435,14 @@ a:hover { color: var(--text); }
   cursor: pointer;
   white-space: nowrap;
 }
-.diff-toggle-all:hover, .diff-copy-link:hover { background: var(--secondary); color: #fff; }
+.diff-toggle-all:hover, .diff-copy-link:hover, .diff-nav-older:hover:not(:disabled), .diff-nav-newer:hover:not(:disabled) {
+  background: var(--secondary);
+  color: #fff;
+}
+.diff-nav-older:disabled, .diff-nav-newer:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
 
 .diff-list {
   display: flex;
