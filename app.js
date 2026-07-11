@@ -898,7 +898,7 @@ function renderDiff(branch, cmp, parentSha, currentSha, headDate) {
   const copyLinkBtn = els.modalBody.querySelector(".diff-copy-link");
   if (copyLinkBtn) {
     copyLinkBtn.onclick = async () => {
-      const hash = `#/${encodeHashSegment(branch)}?diff=${parentSha}...${currentSha}`;
+      const hash = `#/${encodeHashSegment(branch)}?diff=${parentSha.slice(0, 6)}...${currentSha.slice(0, 6)}`;
       const url = `${location.origin}${location.pathname}${hash}`;
       const originalText = copyLinkBtn.textContent;
       const ok = await copyTextToClipboard(url);
