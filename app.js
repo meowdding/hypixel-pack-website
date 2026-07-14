@@ -882,6 +882,72 @@ async function copyTextToClipboard(text) {
   }
 }
 
+function getImgDiff(oldUrl, newUrl) {
+  const oldImg = new Image();
+  const newImg = new Image();
+  oldImg.crossOrigin = "anonymous";
+  newImg.crossOrigin = "anonymous";
+
+  return Promise.all([
+      new Promise(resolve => {
+          oldImg.onload = resolve;
+          oldImg.src = oldUrl;
+      }),
+      new Promise(resolve => {
+          newImg.onload = resolve;
+          newImg.src = newUrl;
+      })
+  ]).then(() => {
+    const url = compareImages(oldImg, newImg);
+    return url;
+  });
+}
+
+function compareImages(oldImg, newImg) {
+  const width = oldImg.width;
+  const height = oldImg.height;
+
+  const oldCanvas = document.createElement("canvas");
+  const newCanvas = document.createElement("canvas");
+  const diffCanvas = document.createElement("canvas");
+
+  oldCanvas.width = newCanvas.width = diffCanvas.width = width;
+  oldCanvas.height = newCanvas.height = diffCanvas.height = height;
+
+  const oldCtx = oldCanvas.getContext("2d");
+  const newCtx = newCanvas.getContext("2d");
+  const diffCtx = diffCanvas.getContext("2d");
+
+  oldCtx.drawImage(oldImg, 0, 0);
+  newCtx.drawImage(newImg, 0, 0);
+  const oldData = oldCtx.getImageData(0, 0, width, height);
+  const newData = newCtx.getImageData(0, 0, width, height);
+  const diffData = diffCtx.createImageData(width, height);
+
+  for (let i = 0; i < oldData.data.length; i += 4) {
+    const same =
+      oldData.data[i] === newData.data[i] &&
+      oldData.data[i+1] === newData.data[i + 1] &&
+      oldData.data[i+2] === newData.data[i + 2] &&
+      oldData.data[i+3] === newData.data[i + 3];
+    if (same) {
+      // Semi-transparent
+      diffData.data[i] = oldData.data[i];
+      diffData.data[i+1] = oldData.data[i+1];
+      diffData.data[i+2] = oldData.data[i+2];
+      diffData.data[i+3] = Math.round(oldData.data[i+3] / 2);
+    } else {
+      // Magenta
+      diffData.data[i] = 255;
+      diffData.data[i+1] = 0;
+      diffData.data[i+2] = 255;
+      diffData.data[i+3] = 255;
+    }
+  }
+  diffCtx.putImageData(diffData, 0, 0);
+  return diffCanvas.toDataURL("image/png");
+}
+
 async function openDiffModal(branch, explicitBase = null, explicitHead = null) {
   const data = branchCache[branch];
   if (!data) return;
@@ -1200,12 +1266,20 @@ function fillDiffExpando(container, f, parentSha, currentSha) {
   if (cat === "image" || cat === "audio") {
     const blocks = [];
     const oldPath = f.status === "renamed" ? f.previous_filename : f.filename;
+    const beforeUrl = rawUrlAtSha(parentSha, oldPath);
+    const afterUrl = rawUrlAtSha(currentSha, f.filename);
 
     if (f.status !== "added" && parentSha) {
-      blocks.push(mediaPreviewBlock("Before", rawUrlAtSha(parentSha, oldPath), cat, f.filename));
+      blocks.push(mediaPreviewBlock("Before", beforeUrl, cat, f.filename));
     }
     if (f.status !== "removed" && currentSha) {
-      blocks.push(mediaPreviewBlock("After", rawUrlAtSha(currentSha, f.filename), cat, f.filename));
+      blocks.push(mediaPreviewBlock("After", afterUrl, cat, f.filename));
+    }
+    if (cat === "image" && f.status === "modified" && parentSha && currentSha) {
+      const diffUrl = getImgDiff(beforeUrl, afterUrl).then(url => {
+        console.log(url);
+        container.firstChild.innerHTML += mediaPreviewBlock("Diff", url, cat, f.filename + " (diff)")
+      })
     }
 
     container.innerHTML = `<div class="diff-media">${blocks.join("")}</div>`;
