@@ -1277,7 +1277,6 @@ function fillDiffExpando(container, f, parentSha, currentSha) {
     }
     if (cat === "image" && f.status === "modified" && parentSha && currentSha) {
       const diffUrl = getImgDiff(beforeUrl, afterUrl).then(url => {
-        console.log(url);
         container.firstChild.innerHTML += mediaPreviewBlock("Diff", url, cat, f.filename + " (diff)")
       })
     }
