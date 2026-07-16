@@ -904,8 +904,8 @@ function getImgDiff(oldUrl, newUrl) {
 }
 
 function compareImages(oldImg, newImg) {
-  const width = oldImg.width;
-  const height = oldImg.height;
+  const width = Math.max(oldImg.width, newImg.width);
+  const height = Math.max(oldImg.height, newImg.height);
 
   const oldCanvas = document.createElement("canvas");
   const newCanvas = document.createElement("canvas");
